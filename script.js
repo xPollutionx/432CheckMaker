@@ -777,29 +777,12 @@ const glassImage = document.getElementById('glassImage');
 const glassFrames = ['glassA.png', 'glassB.png', 'glassC.png'];
 const glassAnimation = document.getElementById('glassAnimation');
 
-// Add a small indicator div to help visualize frame changes
-const frameIndicator = document.createElement('div');
-frameIndicator.style.position = 'absolute';
-frameIndicator.style.bottom = '5px';
-frameIndicator.style.right = '5px';
-frameIndicator.style.backgroundColor = 'rgba(0,0,0,0.5)';
-frameIndicator.style.color = '#fff';
-frameIndicator.style.padding = '3px';
-frameIndicator.style.fontSize = '10px';
-frameIndicator.style.borderRadius = '3px';
-glassAnimation.appendChild(frameIndicator);
-
 function animateGlass() {
     glassAnimationFrame = (glassAnimationFrame + 1) % 3; // Now cycling through 3 frames
     
     // FORCE CACHE BUSTING - Add random timestamp to prevent browser caching
     const forceReload = '?nocache=' + Date.now() + Math.random();
     glassImage.src = glassFrames[glassAnimationFrame] + forceReload;
-    
-    // Update indicator if present
-    if (frameIndicator) {
-        frameIndicator.textContent = `Frame ${glassAnimationFrame + 1}`;
-    }
     
     console.log("Animating glass: frame " + (glassAnimationFrame + 1));
 }
