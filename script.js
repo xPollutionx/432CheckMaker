@@ -772,14 +772,21 @@ tuneBtn.addEventListener('click', async () => {
 });
 
 // Glass animation at 4 frames per second (250ms per frame)
-let glassAnimationFrame = 1;
+let glassAnimationFrame = 0;
 const glassImage = document.getElementById('glassImage');
 const glassFrames = ['glass01.png', 'glass02.png'];
 
 function animateGlass() {
     glassAnimationFrame = (glassAnimationFrame + 1) % 2;
     glassImage.src = glassFrames[glassAnimationFrame];
+    console.log("Animating glass: frame " + glassAnimationFrame);
 }
 
-// Start the glass animation
-setInterval(animateGlass, 250); // 250ms = 4 frames per second 
+// Start the glass animation immediately and ensure it runs
+setInterval(animateGlass, 250); // 250ms = 4 frames per second
+
+// Force the first animation frame
+setTimeout(() => {
+    animateGlass();
+    console.log("Animation started");
+}, 100); 
