@@ -134,44 +134,59 @@
             display: block;
         }
         
-        .glass-animation {
-            position: fixed;
-            top: 0;
-            left: 0;
+        /* Glass animation styles */
+        .main-wrapper {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
             width: 100%;
-            height: 100%;
-            z-index: -1;
+            max-width: 1200px;
+        }
+
+        @media (max-width: 900px) {
+            .main-wrapper {
+                flex-direction: column;
+            }
+        }
+
+        .glass-animation {
+            position: relative;
+            width: 300px;
+            height: 350px;
             display: flex;
             justify-content: center;
             align-items: center;
-            pointer-events: none;
         }
         
         .glass-animation img {
             max-width: 100%;
             max-height: 100%;
-            opacity: 0.3;
+            opacity: 1;
         }
     </style>
 </head>
 <body>
-    <div class="glass-animation" id="glassAnimation">
-        <img src="glass01.png" alt="Glass Animation Frame" id="glassImage">
-    </div>
-    <div class="container">
-        <h1>432 CheckMaker</h1>
-        <div class="upload-section">
-            <input type="file" id="audioInput" class="file-input" accept="audio/*">
-            <button class="upload-btn" onclick="document.getElementById('audioInput').click()">Upload Audio</button>
-            <div id="fileName"></div>
-            <button class="check-btn" id="checkBtn" disabled>Check Frequency</button>
+    <div class="main-wrapper">
+        <div class="glass-animation" id="glassAnimation">
+            <img src="glass01.png" alt="Glass Animation Frame" id="glassImage">
         </div>
-        <div class="loading" id="loading">Analyzing audio...</div>
-        <div class="result-section" id="resultSection">
-            <h2>Analysis Results</h2>
-            <p id="frequencyResult"></p>
-            <button class="tune-btn" id="tuneBtn">Tune to 432Hz</button>
-            <button class="download-btn" id="downloadBtn" style="display: none;">Download 432Hz Version</button>
+        <div class="container">
+            <h1>432 CheckMaker</h1>
+            <div class="upload-section">
+                <input type="file" id="audioInput" class="file-input" accept="audio/*">
+                <button class="upload-btn" onclick="document.getElementById('audioInput').click()">Upload Audio</button>
+                <div id="fileName"></div>
+                <button class="check-btn" id="checkBtn" disabled>Check Frequency</button>
+            </div>
+            <div class="loading" id="loading">Analyzing audio...</div>
+            <div class="result-section" id="resultSection">
+                <h2>Analysis Results</h2>
+                <p id="frequencyResult"></p>
+                <button class="tune-btn" id="tuneBtn">Tune to 432Hz</button>
+                <button class="download-btn" id="downloadBtn" style="display: none;">Download 432Hz Version</button>
+            </div>
         </div>
     </div>
     <script src="script.js"></script>
