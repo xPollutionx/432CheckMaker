@@ -771,19 +771,41 @@ tuneBtn.addEventListener('click', async () => {
     }
 });
 
-// Glass animation at 4 frames per second (250ms per frame)
+// Glass animation with slower frame rate
 let glassAnimationFrame = 0;
 const glassImage = document.getElementById('glassImage');
-const glassFrames = ['glass01.png', 'glass02.png'];
+const glassFrames = ['glassA.png', 'glassB.png', 'glassC.png'];
+const glassAnimation = document.getElementById('glassAnimation');
+
+// Add a small indicator div to help visualize frame changes
+const frameIndicator = document.createElement('div');
+frameIndicator.style.position = 'absolute';
+frameIndicator.style.bottom = '5px';
+frameIndicator.style.right = '5px';
+frameIndicator.style.backgroundColor = 'rgba(0,0,0,0.5)';
+frameIndicator.style.color = '#fff';
+frameIndicator.style.padding = '3px';
+frameIndicator.style.fontSize = '10px';
+frameIndicator.style.borderRadius = '3px';
+glassAnimation.appendChild(frameIndicator);
 
 function animateGlass() {
-    glassAnimationFrame = (glassAnimationFrame + 1) % 2;
-    glassImage.src = glassFrames[glassAnimationFrame];
-    console.log("Animating glass: frame " + glassAnimationFrame);
+    glassAnimationFrame = (glassAnimationFrame + 1) % 3; // Now cycling through 3 frames
+    
+    // FORCE CACHE BUSTING - Add random timestamp to prevent browser caching
+    const forceReload = '?nocache=' + Date.now() + Math.random();
+    glassImage.src = glassFrames[glassAnimationFrame] + forceReload;
+    
+    // Update indicator if present
+    if (frameIndicator) {
+        frameIndicator.textContent = `Frame ${glassAnimationFrame + 1}`;
+    }
+    
+    console.log("Animating glass: frame " + (glassAnimationFrame + 1));
 }
 
-// Start the glass animation immediately and ensure it runs
-setInterval(animateGlass, 250); // 250ms = 4 frames per second
+// Start the glass animation with slower speed (1000ms = 1 second per frame)
+setInterval(animateGlass, 1000); // Slower animation
 
 // Force the first animation frame
 setTimeout(() => {
