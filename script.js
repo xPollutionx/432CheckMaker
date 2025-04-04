@@ -63,6 +63,83 @@ checkBtn.addEventListener('click', async () => {
 
 // Analyze frequency using a proper musical tuning detection algorithm
 async function analyzeFrequency(buffer) {
+    console.log("Starting frequency analysis...");
+    console.log(`Audio duration: ${buffer.duration.toFixed(2)} seconds, Sample rate: ${buffer.sampleRate}Hz`);
+    
+    // For longer audio, analyze multiple segments to find consistent patterns
+    const results = [];
+    const segmentLength = Math.min(buffer.length, 5 * buffer.sampleRate); // Analyze up to 5-second segments
+    
+    // Analyze up to 3 segments of the audio file
+    const totalSegments = Math.min(3, Math.floor(buffer.length / segmentLength));
+    
+    for (let segment = 0; segment < totalSegments; segment++) {
+        const startSample = segment * Math.floor(buffer.length / totalSegments);
+        const endSample = Math.min(startSample + segmentLength, buffer.length);
+        
+        console.log(`Analyzing segment ${segment+1}/${totalSegments} (${((endSample - startSample) / buffer.sampleRate).toFixed(2)}s)`);
+        
+        // Create a segment buffer
+        const segmentBuffer = createSegmentBuffer(buffer, startSample, endSample);
+        
+        // Analyze this segment
+        const result = await analyzeSegment(segmentBuffer);
+        results.push(result);
+    }
+    
+    // Find the most common result
+    const frequencyCounts = {};
+    let maxCount = 0;
+    let mostCommonFreq = 0;
+    
+    // Special handling for 432Hz and 440Hz exact matches
+    let count432 = 0;
+    let count440 = 0;
+    
+    for (const result of results) {
+        if (result === 432) count432++;
+        else if (result === 440) count440++;
+        
+        frequencyCounts[result] = (frequencyCounts[result] || 0) + 1;
+        if (frequencyCounts[result] > maxCount) {
+            maxCount = frequencyCounts[result];
+            mostCommonFreq = result;
+        }
+    }
+    
+    console.log("Analysis results across segments:", results);
+    
+    // Prioritize 432Hz and 440Hz detections
+    if (count432 > 0) return 432;
+    if (count440 > 0) return 440;
+    
+    return mostCommonFreq;
+}
+
+// Create a buffer for a segment of the original audio
+function createSegmentBuffer(buffer, startSample, endSample) {
+    const length = endSample - startSample;
+    const segmentBuffer = new AudioBuffer({
+        length: length,
+        numberOfChannels: buffer.numberOfChannels,
+        sampleRate: buffer.sampleRate
+    });
+    
+    // Copy data from each channel
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        const channelData = buffer.getChannelData(channel);
+        const segmentData = segmentBuffer.getChannelData(channel);
+        
+        for (let i = 0; i < length; i++) {
+            segmentData[i] = channelData[i + startSample];
+        }
+    }
+    
+    return segmentBuffer;
+}
+
+// Analyze a single segment of audio
+async function analyzeSegment(buffer) {
     // Create offline context
     const offlineContext = new OfflineAudioContext(
         buffer.numberOfChannels,
@@ -77,9 +154,9 @@ async function analyzeFrequency(buffer) {
     // Create analyzer
     const analyzer = offlineContext.createAnalyser();
     analyzer.fftSize = 32768; // Large FFT for better resolution
-    analyzer.minDecibels = -100;
+    analyzer.minDecibels = -90;
     analyzer.maxDecibels = -10;
-    analyzer.smoothingTimeConstant = 0;
+    analyzer.smoothingTimeConstant = 0.3; // Add some smoothing for musical content
     
     // Connect nodes
     source.connect(analyzer);
@@ -105,7 +182,7 @@ async function analyzeFrequency(buffer) {
 // Find peaks in frequency spectrum that correspond to musical notes
 function findMusicalPeaks(frequencyData, fftSize, sampleRate) {
     const peaks = [];
-    const threshold = -60; // Threshold in dB
+    const threshold = -70; // Threshold in dB
     
     // Find all significant peaks
     for (let i = 5; i < frequencyData.length - 1; i++) {
@@ -116,8 +193,9 @@ function findMusicalPeaks(frequencyData, fftSize, sampleRate) {
             // Calculate frequency for this bin
             const frequency = i * sampleRate / fftSize;
             
-            // Only consider frequencies in musical range (20Hz-10000Hz)
-            if (frequency >= 20 && frequency <= 10000) {
+            // Only consider frequencies in musical range (80Hz-5000Hz)
+            // Narrowed range to focus more on fundamental music frequencies
+            if (frequency >= 80 && frequency <= 5000) {
                 peaks.push({
                     frequency: frequency,
                     amplitude: frequencyData[i]
@@ -139,21 +217,25 @@ function determineMusicalTuning(peaks) {
     const topPeaks = peaks.slice(0, Math.min(peaks.length, 20));
     console.log("Top detected frequencies:", topPeaks.map(p => p.frequency.toFixed(2)));
     
-    // First, check if we have peaks very close to our target A notes
-    // This is a direct check for 432Hz presence
+    // First, check if we have peaks very close to our target A notes or key harmonics
     const directMatch = checkDirectMatch(topPeaks);
     if (directMatch !== 0) {
         console.log(`Direct match found for ${directMatch}Hz`);
         return directMatch;
     }
     
+    // For music analysis, we need to check all potentially musical intervals
+    // Not just A notes, but all common note frequencies and their harmonics
+    
     // Counters for how well peaks match each tuning standard
     let score440 = 0;
     let score432 = 0;
     
-    // Define A notes in both tuning systems (A0 through A7)
-    const aNotes440 = [27.5, 55, 110, 220, 440, 880, 1760, 3520];
-    const aNotes432 = [27, 54, 108, 216, 432, 864, 1728, 3456];
+    // Check more note frequencies beyond just A
+    // Include frequencies for C, D, E, F, G, A, B in both tuning systems
+    // These are calculated relative to A4
+    const notesFrom440 = calculateMusicNotes(440);
+    const notesFrom432 = calculateMusicNotes(432);
     
     // For each peak, check how closely it matches each tuning system
     for (const peak of topPeaks) {
@@ -161,64 +243,116 @@ function determineMusicalTuning(peaks) {
         let best432Match = Infinity;
         
         // Find best match against 440Hz system
-        for (const aNote of aNotes440) {
-            const cents = calculateCents(peak.frequency, aNote);
+        for (const noteFreq of notesFrom440) {
+            const cents = calculateCents(peak.frequency, noteFreq);
             if (Math.abs(cents) < Math.abs(best440Match)) {
                 best440Match = cents;
             }
         }
         
         // Find best match against 432Hz system
-        for (const aNote of aNotes432) {
-            const cents = calculateCents(peak.frequency, aNote);
+        for (const noteFreq of notesFrom432) {
+            const cents = calculateCents(peak.frequency, noteFreq);
             if (Math.abs(cents) < Math.abs(best432Match)) {
                 best432Match = cents;
             }
         }
         
         // Weight the scores based on peak amplitude
-        const weight = (peak === topPeaks[0]) ? 3 : 1; // Give more weight to strongest peak
+        const weight = Math.pow(10, (peak.amplitude + 100) / 20); // Convert dB to linear scale
+        const normalizedWeight = Math.min(5, weight / 1000); // Normalize and cap
         
         // Add score based on which system matched better
         if (Math.abs(best440Match) < Math.abs(best432Match)) {
-            score440 += weight;
+            score440 += normalizedWeight;
         } else {
-            score432 += weight;
+            score432 += normalizedWeight;
         }
     }
     
-    console.log(`Tuning scores - 440Hz: ${score440}, 432Hz: ${score432}`);
+    console.log(`Tuning scores - 440Hz: ${score440.toFixed(2)}, 432Hz: ${score432.toFixed(2)}`);
     
-    // Use objective criteria only with a small margin to avoid false positives
+    // Use objective criteria with a small margin to avoid false positives
     if (score440 > score432 * 1.1) {
         return 440;
     } else if (score432 > score440 * 1.1) {
         return 432;
     } else {
-        // If we can't be confident, report the strongest peak
+        // If we can't be confident, report the strongest peak frequency
         return parseFloat(topPeaks[0].frequency.toFixed(2));
     }
 }
 
+// Calculate music note frequencies for an octave based on A4 reference
+function calculateMusicNotes(a4Freq) {
+    const notes = [];
+    
+    // Frequency ratios for notes relative to A4
+    // C, C#, D, D#, E, F, F#, G, G#, A, A#, B
+    const ratios = [
+        2/3 * 2, // C
+        2/3 * 2 * Math.pow(2, 1/12), // C#
+        3/4 * 2, // D
+        3/4 * 2 * Math.pow(2, 1/12), // D#
+        5/6 * 2, // E
+        8/9 * 2, // F
+        8/9 * 2 * Math.pow(2, 1/12), // F#
+        9/10 * 2, // G
+        9/10 * 2 * Math.pow(2, 1/12), // G#
+        1, // A
+        1 * Math.pow(2, 1/12), // A#
+        9/8 // B
+    ];
+    
+    // Generate notes across 7 octaves
+    for (let octave = -3; octave <= 3; octave++) {
+        const octaveShift = Math.pow(2, octave);
+        for (const ratio of ratios) {
+            notes.push(a4Freq * ratio * octaveShift);
+        }
+    }
+    
+    return notes;
+}
+
 // Check for direct matches to 432Hz or 440Hz
 function checkDirectMatch(peaks) {
-    for (const peak of peaks) {
-        // If we have a very close match to 432Hz or one of its harmonics/subharmonics
-        const harmonics432 = [108, 216, 432, 864, 1728];
-        for (const harmonic of harmonics432) {
-            if (Math.abs(peak.frequency - harmonic) < 3) {
+    // Check the top peaks against common note frequencies in both systems
+    // Use a tighter match threshold for direct matches
+    for (const peak of peaks.slice(0, 5)) { // Only check strongest peaks
+        // Check for A notes and harmonically related notes in 432Hz system
+        const notes432 = [432, 864, 216, 108, 54];  // A notes (432Hz, harmonics)
+        for (const note of notes432) {
+            if (Math.abs(peak.frequency - note) / note < 0.01) { // 1% tolerance
                 return 432;
             }
         }
         
-        // Similarly for 440Hz
-        const harmonics440 = [110, 220, 440, 880, 1760];
-        for (const harmonic of harmonics440) {
-            if (Math.abs(peak.frequency - harmonic) < 3) {
+        // Check for A notes and harmonically related notes in 440Hz system
+        const notes440 = [440, 880, 220, 110, 55];  // A notes (440Hz, harmonics)
+        for (const note of notes440) {
+            if (Math.abs(peak.frequency - note) / note < 0.01) { // 1% tolerance
+                return 440;
+            }
+        }
+        
+        // Also check if we're very close to key 432Hz E notes
+        const eNotes432 = [324, 648, 162, 81]; // E notes in 432Hz system (3:4 ratio)
+        for (const note of eNotes432) {
+            if (Math.abs(peak.frequency - note) / note < 0.01) {
+                return 432;
+            }
+        }
+        
+        // Similarly for 440Hz E notes
+        const eNotes440 = [330, 660, 165, 82.5]; // E notes in 440Hz system
+        for (const note of eNotes440) {
+            if (Math.abs(peak.frequency - note) / note < 0.01) {
                 return 440;
             }
         }
     }
+    
     return 0; // No direct match
 }
 
@@ -285,10 +419,53 @@ This audio is not tuned to either 440Hz or 432Hz`;
 
 // Tune audio to 432Hz from any starting point
 async function tuneTo432Hz(buffer) {
-    // Apply a precise ratio for reliable tuning
-    const ratio = 432 / 440; // = 0.981818...
-    console.log(`Applying tuning ratio: ${ratio}`);
+    // First determine the most likely tuning of the original
+    console.log("Analyzing original audio tuning before conversion...");
     
+    try {
+        // Analyze a small segment for efficiency
+        const sampleLength = Math.min(buffer.length, 5 * buffer.sampleRate); // 5 second sample
+        const sampleBuffer = createSegmentBuffer(buffer, 0, sampleLength);
+        const originalTuning = await analyzeSegment(sampleBuffer);
+        
+        console.log(`Original audio appears to be tuned to ${originalTuning}Hz`);
+        
+        // Calculate appropriate ratio
+        let ratio;
+        if (originalTuning === 432) {
+            console.log("Audio already appears to be at 432Hz, making no changes");
+            return audioBufferToWav(buffer); // Return the buffer as-is
+        } else if (originalTuning === 440) {
+            ratio = 432 / 440; // Standard conversion from 440Hz to 432Hz
+        } else if (originalTuning > 0) {
+            // If we detected some other specific frequency, adjust accordingly
+            ratio = 432 / originalTuning;
+        } else {
+            // Default to standard 440 to 432 conversion if we couldn't determine
+            ratio = 432 / 440;
+        }
+        
+        console.log(`Applying tuning ratio: ${ratio.toFixed(6)} (from ${originalTuning || 440}Hz to 432Hz)`);
+    
+        // Process more efficiently for larger files
+        if (buffer.length > 10 * buffer.sampleRate) { // More than 10 seconds
+            console.log("Processing large audio file in memory-efficient manner...");
+            return await tuneAudioChunked(buffer, ratio);
+        } else {
+            // For shorter files, use the standard approach
+            return await tuneAudioStandard(buffer, ratio);
+        }
+    } catch (error) {
+        console.error("Error in tuning process:", error);
+        // Fall back to standard 440->432 conversion
+        console.log("Falling back to standard 440->432Hz conversion");
+        const ratio = 432 / 440;
+        return await tuneAudioStandard(buffer, ratio);
+    }
+}
+
+// Standard tuning approach for shorter files
+async function tuneAudioStandard(buffer, ratio) {
     // Create a new buffer with proper length for pitch shifting
     const newLength = Math.floor(buffer.length / ratio);
     
@@ -313,16 +490,98 @@ async function tuneTo432Hz(buffer) {
     source.start(0);
     
     // Process audio
+    console.log('Processing audio...');
     const renderedBuffer = await offlineContext.startRendering();
     console.log('Audio processing complete');
     
-    // Verify the tuning worked
-    const verification = await verifyTuning(renderedBuffer);
-    console.log(`Tuning verification: ${verification}Hz`);
-    
     // Convert to WAV
+    console.log('Converting to WAV format...');
     const wavData = audioBufferToWav(renderedBuffer);
     return wavData;
+}
+
+// Chunked tuning approach for longer files to avoid memory issues
+async function tuneAudioChunked(buffer, ratio) {
+    // For very long audio, we process in chunks to avoid memory issues
+    const chunkSize = 10 * buffer.sampleRate; // 10 second chunks
+    const chunks = Math.ceil(buffer.length / chunkSize);
+    console.log(`Processing audio in ${chunks} chunks...`);
+    
+    // Create the final buffer with proper length
+    const newLength = Math.floor(buffer.length / ratio);
+    const finalBuffer = new AudioBuffer({
+        numberOfChannels: buffer.numberOfChannels,
+        length: newLength,
+        sampleRate: buffer.sampleRate
+    });
+    
+    // Process each chunk
+    for (let i = 0; i < chunks; i++) {
+        const startSample = i * chunkSize;
+        const endSample = Math.min((i + 1) * chunkSize, buffer.length);
+        console.log(`Processing chunk ${i+1}/${chunks} (${((endSample - startSample) / buffer.sampleRate).toFixed(2)}s)`);
+        
+        // Create chunk buffer
+        const chunkBuffer = createSegmentBuffer(buffer, startSample, endSample);
+        
+        // Calculate chunk output size
+        const chunkOutputSize = Math.floor((endSample - startSample) / ratio);
+        
+        // Process this chunk
+        const processedChunk = await tuneBufferChunk(chunkBuffer, ratio);
+        
+        // Copy processed chunk to final buffer
+        const destStart = Math.floor(startSample / ratio);
+        copyBufferSegment(processedChunk, finalBuffer, destStart);
+    }
+    
+    // Convert to WAV
+    console.log('Converting complete audio to WAV format...');
+    const wavData = audioBufferToWav(finalBuffer);
+    return wavData;
+}
+
+// Process a single audio chunk
+async function tuneBufferChunk(buffer, ratio) {
+    // Calculate new length for this chunk
+    const newLength = Math.floor(buffer.length / ratio);
+    
+    // Create offline context for processing
+    const offlineContext = new OfflineAudioContext(
+        buffer.numberOfChannels,
+        newLength,
+        buffer.sampleRate
+    );
+    
+    // Create source
+    const source = offlineContext.createBufferSource();
+    source.buffer = buffer;
+    
+    // Apply playback rate
+    source.playbackRate.value = ratio;
+    
+    // Connect to destination
+    source.connect(offlineContext.destination);
+    
+    // Start playback
+    source.start(0);
+    
+    // Process audio
+    return await offlineContext.startRendering();
+}
+
+// Copy data from one buffer to another
+function copyBufferSegment(sourceBuffer, destBuffer, destStart) {
+    for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel++) {
+        const sourceData = sourceBuffer.getChannelData(channel);
+        const destData = destBuffer.getChannelData(channel);
+        
+        for (let i = 0; i < sourceBuffer.length; i++) {
+            if (destStart + i < destBuffer.length) {
+                destData[destStart + i] = sourceData[i];
+            }
+        }
+    }
 }
 
 // Verify the tuning of a processed buffer
@@ -510,4 +769,17 @@ tuneBtn.addEventListener('click', async () => {
     } finally {
         loading.classList.remove('visible');
     }
-}); 
+});
+
+// Glass animation at 4 frames per second (250ms per frame)
+let glassAnimationFrame = 1;
+const glassImage = document.getElementById('glassImage');
+const glassFrames = ['glass01.png', 'glass02.png'];
+
+function animateGlass() {
+    glassAnimationFrame = (glassAnimationFrame + 1) % 2;
+    glassImage.src = glassFrames[glassAnimationFrame];
+}
+
+// Start the glass animation
+setInterval(animateGlass, 250); // 250ms = 4 frames per second 
